@@ -1,0 +1,364 @@
+<!doctype html>
+<html>
+	<head>
+		<title>Multiuser Sketchpad Mobile</title>
+		<meta name="viewport" content="width=device-width; initial-scale=1.0; maximum-scale=1.0; user-scalable=0;"/>
+		<style type="text/css"> 
+			body {
+				background-color:#f0f0f0;
+				margin: 0px;
+				overflow: hidden;
+			}
+
+			#panel {
+				position: absolute;
+				width: 180px;
+				font-family: Helvetica, Arial;
+				font-size:13px;
+				color: #606060;
+				background-color:#ffffff;
+				border-right: 1px solid #ddd;
+				float: left;
+			}
+
+			#messages {
+
+				color: #707070;
+
+			}
+
+			#container {
+				position: absolute;
+				top: 0px;
+				left: 0px;
+			}
+
+			#canvas {
+				position: absolute;
+
+			}
+
+			hr {
+
+				border: 0;
+				height: 1px;
+				background-color: #ccc;
+				margin: 20px 0px;
+
+			}
+
+			a {
+				color: #404040;
+				cursor: pointer;
+				text-decoration: underline;
+			}
+
+			a:hover {
+				text-decoration: none;
+			}
+
+			canvas {
+				cursor: crosshair;
+			}
+
+			input {
+				width: 100%;
+				font-family: Helvetica, Arial;
+				font-size:13px;
+				color: #808080;
+				border: 0;
+				background-color:#f0f0f0;
+			}
+			.colors.selected { font-weight:bold; }
+		</style>
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.6.4/jquery.min.js" type="text/javascript" charset="utf-8"></script>
+	</head>
+	<body>
+
+		<canvas id="canvas"></canvas>
+		<div id="container"></div>
+		<div id="panel">
+			<table style="width: 100%; padding: 10px;"><tr><td>
+
+				<strong>Multiuser Sketchpad</strong><br />
+
+				Colors: <br>
+				<a class="colors selected" data-color="0" >Black</a><br>
+				<a class="colors" data-color="1">White</a><br />
+				<a class="colors" data-color="2">Blue</a><br />
+				<a class="colors" data-color="3">Red</a><br />
+				<a class="colors" data-color="4">Green</a><br />
+				<br>
+				Save: <a onclick="saveDrawing()">.png</a><br />
+
+				<hr />
+
+			</td></tr>
+			<tr><td >
+				
+			</td></tr>
+			<tr><td>
+
+				<br />
+				<strong><span id="nickname"></span></strong> <a id="changename">Change</a><br />
+			</td></tr></table>
+		</div>
+		
+<script src="/socket.io/socket.io.js"></script>
+<script type="text/javascript">
+	var socket = io.connect('http://localhost:8080');
+
+	// socket.emit('set nickname', 'ufe');
+	// socket.emit('set nickname', prompt('What is your nickname?'));	
+	
+	// STUFFS FROM THE SERVER
+	socket.on('user connected', function(data){
+		addUser( data.userid.toString(), data.userid.toString() );
+	});
+	
+	socket.on('user', function(data){
+		user_id = data.userid;	
+		$('#nickname').text(data.userid);
+		
+		// if ( window.localStorage && window.localStorage.nickname ) {
+		// 	$('#nickname').text( window.localStorage.nickname );
+		// 	//socket.emit('set nickname', window.localStorage.nickname);
+		// }
+		
+	});
+	
+	socket.on('userlist', function(data){		
+		$(data).each( function(){
+			addUser( this.toString(), this.toString() );
+		});
+	});	
+	
+	socket.on('user disconnected', function(data){
+		removeUser( data.userid );
+	});		
+	
+	socket.on('nickname', function(data){
+		console.log('nickname', data.userid, data.name);
+		// setUserNickname( data.userid, data.name );
+		user = users[ data.userid ];
+		// delete(users[ data.userid ]);
+		
+		user.nickname = data.name; //.replace(/\</gi,'&lt;').replace(/\>/gi,'&gt;').replace(/\ /gi,'&nbsp;');
+		$(user.nicknameElement).text( data.name);
+		users[ data.userid ] = user;
+		// console.log(users);
+		
+	});
+	
+	socket.on('color', function(data){
+		users[ data.userid ].color = parseInt( data.color );
+	});
+	
+	socket.on('close', function(){
+		addServerMessage( 'Disconnected :/' );	
+	});
+
+
+	var users = {}, mouseX = 0, mouseY = 0, oldMouseX = 0, oldMouseY = 0, mouseDown = false;
+	var user_id;
+
+	var PANEL_WIDTH = 180,
+	SCREEN_WIDTH = window.innerWidth,
+	SCREEN_HEIGHT = window.innerHeight,
+	CANVAS_WIDTH = 1024,
+	CANVAS_HEIGHT = 1024;
+
+	var COLOR = 0;
+
+	var colorBlackButton = document.getElementById( 'colorBlackButton' );
+	var colorWhiteButton = document.getElementById( 'colorWhiteButton' );
+
+	var container = document.getElementById( 'container' );
+	container.style.left = PANEL_WIDTH + 'px';
+	container.addEventListener( 'mouseover', function( event ) { event.preventDefault(); }, false );
+	container.addEventListener( 'mousedown', function( event ) { event.preventDefault(); }, false );
+
+	var panel = document.getElementById( 'panel' );
+	panel.style.width = PANEL_WIDTH + 'px';
+
+	var canvas = document.getElementById( 'canvas' );
+	canvas.width = CANVAS_WIDTH;
+	canvas.height = CANVAS_HEIGHT;
+	canvas.style.left = PANEL_WIDTH + 'px';
+
+	var context = canvas.getContext( '2d' );
+	context.lineWidth = 0.3;
+	context.fillStyle = 'rgb(255, 255, 255)';
+	context.fillRect( 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT );
+
+	window.addEventListener( 'resize', onWindowResize, false );
+
+	var nicknameSpan = document.getElementById( 'nickname' );
+
+	$('#changename').click(function(){
+		var nickname = prompt("Set your nickname. (Max 10 chars)");
+		//nickname = nickname.slice( 0, 10 ).replace(/\</gi,'&lt;').replace(/\>/gi,'&gt;').replace(/\ /gi,'&nbsp;');
+		$('#nickname').text( nickname );
+		// window.localStorage.nickname = nickname;		
+		socket.emit('set nickname', nickname);
+							
+	});
+
+
+	$(canvas).bind('mousedown', function(event){
+		event.preventDefault();
+		mouseDown = true;
+		mouseX = event.clientX - canvas.offsetLeft;
+		mouseY = event.clientY - canvas.offsetTop;
+		socket.emit('draw', {userid: user_id, x:mouseX, y: mouseY});
+	});
+
+	$(document).bind('mouseup', function(event){
+		mouseDown = false;
+	});
+
+	$(document).bind('mousemove', function(event){
+		oldMouseX = mouseX;
+		oldMouseY = mouseY;
+		mouseX = event.clientX - canvas.offsetLeft;
+		mouseY = event.clientY - canvas.offsetTop;
+		
+		if ( mouseDown ) {
+			draw( oldMouseX, oldMouseY, mouseX, mouseY, COLOR );
+			socket.emit('draw', {userid: user_id, x:mouseX, y: mouseY, color:COLOR});
+		}
+		else {
+			socket.emit('position', {userid: user_id, x:mouseX, y: mouseY});
+		}
+	});
+	
+	// recieving user position data
+	socket.on('position', function(data){
+		moveUser( data.userid, data.x, data.y );
+	});
+	
+	// like position but when the mouse is down
+	socket.on('draw', function(data){
+		drawUser( data.userid, data.x, data.y, data.color);
+	});
+
+
+	function onWindowResize( event ) {
+		SCREEN_HEIGHT = window.innerHeight;
+		panel.style.height = SCREEN_HEIGHT + 'px';
+	}
+
+	function addUser( id, nickname ) {
+		console.log('adduser', id, nickname);
+		
+		var user = users[ id ] = {
+
+			idColor: Math.floor( Math.random() * 128 + 32 ) + ',' + Math.floor( Math.random() * 128 + 32 ) + ',' + Math.floor( Math.random() * 128 + 32 ),
+			x: 0,
+			y: 0,
+			nickname: nickname.replace(/\</gi,'&lt;').replace(/\>/gi,'&gt;').replace(/\ /gi,'&nbsp;'),
+			color: 0,
+			mouseDown: false,
+			domElement: false,
+			nicknameElement: false
+		};
+		// 
+		var canvas = document.createElement( 'canvas' );
+		canvas.width = 16;
+		canvas.height = 16;
+		
+		var context = canvas.getContext( '2d' );
+		context.lineWidth = 0.2;
+		context.fillStyle = 'rgba(' + user.idColor + ', 0.2)';
+		context.strokeStyle = 'rgb(' + user.idColor + ')';
+		
+		context.beginPath();
+		context.arc( 8, 8, 6, 0, Math.PI * 2, true );
+		context.closePath();
+		context.fill();
+		context.stroke();
+
+		user.domElement = $('<div />')
+								.css('position', 'absolute')
+								.css('visibility', 'hidden')
+								.appendTo('#container')
+								.append( canvas );
+
+		user.nicknameElement = $('<span />')
+									.text( user.nickname )
+									.css('position', 'absolute')
+									.css('top', 3)
+									.css('left', 18)
+									.css('color', 'rgb('+ user.idColor +')')
+									.css('fontFamily', 'Helvetica, Arial')
+									.css('fontSize', 9)
+									.appendTo( user.domElement );
+
+		$('#container').append( user.domElement );
+	}
+
+	function moveUser(id, x, y) {
+		var user = users[ id ];
+		user.x = x;
+		user.y = y;
+	
+		$(user.domElement)
+			.css('left', user.x - 8)
+			.css('top', user.y - 8)
+			.css('visibility','visible');
+	}
+
+	function drawUser(id, x, y, color) {
+		var user = users[ id ];
+		draw( user.x, user.y, x, y, color );
+		user.x = x;
+		user.y = y;
+	
+		$(user.domElement)
+			.css('left', user.x - 8)
+			.css('top', user.y - 8)
+			.css('visibility','visible');
+	}
+
+	function removeUser( id ) {
+		var user = users[ id ];
+		if ( user ) {
+			$(user.domElement).remove();
+			delete user;
+		}
+	}
+
+	function draw( x1, y1, x2, y2, color ) {
+		var dx  = x2 - x1,
+		dy = y2 - y1,
+		d = Math.sqrt( dx * dx + dy * dy ) * 0.005;
+		
+		// if(d > 0.7) d = 0.7;
+		// context.strokeStyle = ( color == 0 ) ? 'rgba(0, 0, 0, ' + ( 0.7 - d )  + ')' : 'rgba(255, 255, 255, ' + ( 1 - d )  + ')';
+		context.strokeStyle = 'rgba(' + colors[color] +', ' + ( 0.7 - d )  + ')';
+		context.lineWidth = 1.0;
+		context.beginPath();
+		context.moveTo( x1, y1 );
+		context.lineTo( x2, y2 );
+		context.closePath();
+		context.stroke();
+	}
+
+	$('.colors').click(function(){
+		COLOR = $(this).data('color');
+		$('.colors').removeClass('selected');
+		$(this).addClass('selected');
+	});
+
+	function saveDrawing() {
+		window.open( canvas.toDataURL( 'image/png' ), 'mywindow' );
+	}
+	
+	var colors = ['0,0,0', '255,255,255', '28,83,237', '237,28,36','39,200,7'];
+	
+</script>
+
+
+
+	</body>
+</html>
